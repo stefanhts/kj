@@ -1,61 +1,122 @@
-use std::default;
 use std::env;
 use std::fs;
 use std::fs::DirEntry;
+use std::vec;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let mut env_dir: &str = "";
+    // let args: Vec<String> = env::args().collect();
+    //
+    //if a path is specified use it, if not then set path to "./"
+    // set depth to 0 by default
+    // -s should hide . files
+    // add more tags for more info
+    let mut depth = 0;
+    let mut hide = false;
+    let mut path = String::from("./");
 
-    if args.len() == 2 && !args[2].contains("-") {
-        env_dir = args[2].as_str();
-    } else if args.len() == 1 {
-        env_dir = "./";
-    }
+    let mut args: Vec<String> = env::args().collect();
+    let mut has_path: bool = false;
+    let mut path_ind: usize = 0;
+    args.remove(0);
+    let mut flags: Vec<char> = vec![];
 
-    let flag_str: &str;
-    let mut env_dir = args[args.len() - 1].as_str();
-    let mut flag_lst: Option<Vec<&str>> = Some(vec![]);
+    for (i, arg) in args.iter().enumerate() {
+        if arg.starts_with("-") {
+            let flag_spread = &arg[1..];
+            if flag_spread.starts_with("-d=") {
+                depth = flag_spread[3..4].parse::<i32>().unwrap();
+                continue;
+            }
 
-    if args.len() == 2 {
-        let flags = args[1].as_str();
-        if flags.chars().nth(0).unwrap() == '-' {
-            flag_str = &flags[1..];
-            flag_lst = Some(flag_str.split("").collect());
-            env_dir = args[2].as_str();
-        }
-        panic!("Unsupported arguments");
-    } else if args.len() == 3 {
-        let flags = args[1].as_str();
-        if flags.chars().nth(0).unwrap() == '-' {
-            flag_str = &flags[1..];
-            env_dir = &"";
+            for el in flag_spread.chars().enumerate() {
+                flags.push(el.1);
+            }
         } else {
-            flag_lst = None;
-            env_dir = ""
+            has_path = true;
+            path_ind = i;
+            return;
         }
-    } else if args.len() > 2 {
-        panic!("Too many args");
+        has_path = false;
     }
 
-    // for flag in flag_lst.unwrap() {
-    //     match flag {
-    //         &_ => {}
-    //     }
-    // }
-
-    let paths = fs::read_dir("./").unwrap();
-    let print = |path: DirEntry| -> Option<String> {
-        let mut out = String::from("");
-        let path_str = path.path();
-        if path_str.is_dir() {
-            out = String::from("|>");
+    for flag in flags {
+        match flag {
+            's' => hide = true,
+            x => error(format!("Unexpected flag: {}", x)),
         }
-        let res = path_str.file_name()?.to_str()?;
-        out.push_str(res);
-        return Some(out);
-    };
+    }
+
+    if has_path {
+        path.push_str(args.get(path_ind).unwrap());
+    }
+
+    read_dir(path, depth + 1, 0, hide);
+}
+
+fn error(msg: String) {
+    print!("Error: {}\n", msg);
+}
+
+fn read_dir(path: String, depth: i32, ind: i32, hide: bool) {
+    if depth == ind {
+        return;
+    }
+    let mut dirs: Vec<DirEntry> = vec![];
+    let mut files: Vec<DirEntry> = vec![];
+    let paths = fs::read_dir(path).unwrap();
+
     for path in paths {
-        print!("{}\n", print(path.unwrap()).unwrap());
+        if let Ok(path) = path {
+            if path.path().is_dir() {
+                dirs.push(path);
+            } else {
+                files.push(path);
+            }
+        }
     }
+
+    dirs.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    print_files(dirs, depth, ind, hide);
+    print_files(files, depth, ind, hide);
+}
+
+fn print_files(files: Vec<DirEntry>, depth: i32, ind: i32, hide: bool) {
+    for file in files {
+        print_file(file, depth, ind, hide);
+    }
+}
+
+fn print_file(file: DirEntry, depth: i32, ind: i32, hide: bool) -> Option<bool> {
+    if ind > depth {
+        return Some(true);
+    }
+    if let Some(path) = file.path().file_name() {
+        if !hide || !path.to_str()?.starts_with(".") {
+            if file.path().is_dir() {
+                print_depth(ind);
+                print!("{}|>\n", path.to_str()?);
+                if ind < depth {
+                    read_dir(
+                        String::from(file.path().to_str().unwrap()),
+                        depth,
+                        ind + 1,
+                        hide,
+                    );
+                }
+            } else {
+                print_depth(ind);
+                print!("{}~\n", path.to_str()?)
+            }
+        }
+    }
+    return Some(true);
+}
+
+fn print_depth(depth: i32) {
+    if depth == 0 {
+        return;
+    }
+    print!("\t");
+    print_depth(depth - 1);
 }
